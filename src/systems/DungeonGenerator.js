@@ -103,7 +103,7 @@ export class DungeonGenerator {
 
       this.rooms.push({ x, y, w, h, cx: Math.floor(x + w / 2), cy: Math.floor(y + h / 2) });
     }
-    this.rooms.sort((a, b) => a.cy - b.cy);
+    this.rooms.sort((a, b) => a.cx - b.cx);
   }
 
   _connectRooms() {
@@ -132,26 +132,29 @@ export class DungeonGenerator {
   }
 
   _placeEntrance() {
-    const room = this.rooms[this.rooms.length - 1];
+    // Entrance in the first (leftmost) room
+    const room = this.rooms[0];
     this.entrance = { x: room.cx, y: room.cy };
     this.grid[room.cy][room.cx] = TILE.ENTRANCE;
   }
 
   _placeExit() {
-    const room = this.rooms[0];
+    // Exit in the last (rightmost) room
+    const room = this.rooms[this.rooms.length - 1];
     this.exit = { x: room.cx, y: room.cy };
     this.grid[room.cy][room.cx] = TILE.EXIT;
   }
 
   _placeSpikes() {
+    const SAFE_RADIUS = 4; // safe zone around entrance and exit
     const density = SPIKE_DENSITY + this.floor * DIFFICULTY.SPIKE_PER_FLOOR;
     const tiles = this._getFloorTiles();
     const num = Math.floor(tiles.length * density);
     const shuffled = this._shuffle(tiles);
     for (let i = 0; i < Math.min(num, shuffled.length); i++) {
       const { x, y } = shuffled[i];
-      if (this._distTo(x, y, this.entrance.x, this.entrance.y) < 3) continue;
-      if (this._distTo(x, y, this.exit.x, this.exit.y) < 3) continue;
+      if (this._distTo(x, y, this.entrance.x, this.entrance.y) < SAFE_RADIUS) continue;
+      if (this._distTo(x, y, this.exit.x, this.exit.y) < SAFE_RADIUS) continue;
       this.grid[y][x] = TILE.SPIKE;
       this.spikePositions.push({ x, y });
     }
@@ -169,11 +172,14 @@ export class DungeonGenerator {
   }
 
   _placeEnemies() {
+    const SAFE_RADIUS = 5; // safe zone — no enemies near entrance
     const maxEn = Math.min(DIFFICULTY.MAX_ENEMIES, Math.floor(this.floor * ENEMY_CHANCE));
     let placed = 0;
     for (const room of this.rooms) {
       if (placed >= maxEn) break;
       if (Math.random() > ENEMY_CHANCE || room.w < 3 || room.h < 3) continue;
+      // Skip rooms too close to the entrance (safe zone)
+      if (this._distTo(room.cx, room.cy, this.entrance.x, this.entrance.y) < SAFE_RADIUS) continue;
       const startX = room.x + 1, endX = room.x + room.w - 2;
       if (endX > startX) { this.enemyPaths.push({ startX, endX, y: room.cy, direction: 1 }); placed++; }
     }
@@ -333,35 +339,35 @@ export class DungeonGenerator {
     this._reset();
     this._initGrid();
 
-    const cx = Math.floor(MAP_COLS / 2);
+    const cy = Math.floor(MAP_ROWS / 2);
 
-    // Bottom room (entrance)
-    for (let y = MAP_ROWS - 4; y < MAP_ROWS - 1; y++)
-      for (let x = cx - 2; x <= cx + 2; x++)
-        if (x >= 1 && x < MAP_COLS - 1) this.grid[y][x] = TILE.FLOOR;
-    this.rooms.push({ x: cx - 2, y: MAP_ROWS - 4, w: 5, h: 3, cx, cy: MAP_ROWS - 3 });
+    // Left room (entrance)
+    for (let y = cy - 2; y <= cy + 2; y++)
+      for (let x = 2; x < 6; x++)
+        if (y >= 1 && y < MAP_ROWS - 1) this.grid[y][x] = TILE.FLOOR;
+    this.rooms.push({ x: 2, y: cy - 2, w: 4, h: 5, cx: 4, cy });
 
-    // Top room (exit)
-    for (let y = 2; y < 5; y++)
-      for (let x = cx - 2; x <= cx + 2; x++)
-        if (x >= 1 && x < MAP_COLS - 1) this.grid[y][x] = TILE.FLOOR;
-    this.rooms.push({ x: cx - 2, y: 2, w: 5, h: 3, cx, cy: 3 });
+    // Right room (exit)
+    for (let y = cy - 2; y <= cy + 2; y++)
+      for (let x = MAP_COLS - 6; x < MAP_COLS - 2; x++)
+        if (y >= 1 && y < MAP_ROWS - 1) this.grid[y][x] = TILE.FLOOR;
+    this.rooms.push({ x: MAP_COLS - 6, y: cy - 2, w: 4, h: 5, cx: MAP_COLS - 4, cy });
 
     // Middle room
-    const my = Math.floor(MAP_ROWS / 2);
-    for (let y = my - 1; y <= my + 1; y++)
-      for (let x = cx - 2; x <= cx + 2; x++)
-        if (x >= 1 && x < MAP_COLS - 1) this.grid[y][x] = TILE.FLOOR;
-    this.rooms.push({ x: cx - 2, y: my - 1, w: 5, h: 3, cx, cy: my });
+    const mx = Math.floor(MAP_COLS / 2);
+    for (let y = cy - 2; y <= cy + 2; y++)
+      for (let x = mx - 2; x <= mx + 2; x++)
+        if (y >= 1 && y < MAP_ROWS - 1 && x >= 1 && x < MAP_COLS - 1) this.grid[y][x] = TILE.FLOOR;
+    this.rooms.push({ x: mx - 2, y: cy - 2, w: 5, h: 5, cx: mx, cy });
 
-    // Connect with corridors
-    this._carveCorridorL(cx, MAP_ROWS - 3, cx, my);
-    this._carveCorridorL(cx, my, cx, 3);
+    // Connect with horizontal corridors
+    this._carveCorridorL(4, cy, mx, cy);
+    this._carveCorridorL(mx, cy, MAP_COLS - 4, cy);
 
-    this.entrance = { x: cx, y: MAP_ROWS - 3 };
-    this.grid[MAP_ROWS - 3][cx] = TILE.ENTRANCE;
-    this.exit = { x: cx, y: 3 };
-    this.grid[3][cx] = TILE.EXIT;
+    this.entrance = { x: 4, y: cy };
+    this.grid[cy][4] = TILE.ENTRANCE;
+    this.exit = { x: MAP_COLS - 4, y: cy };
+    this.grid[cy][MAP_COLS - 4] = TILE.EXIT;
 
     this._placeCoins();
     this._placeTorches();
