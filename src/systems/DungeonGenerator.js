@@ -1,5 +1,6 @@
 // ============================================
 // DungeonGenerator — Procedural rooms & corridors
+// with guaranteed winnability validation
 // ============================================
 
 import { TILE, MAP_COLS, MAP_ROWS, MIN_ROOMS, MAX_ROOMS, MIN_ROOM_SIZE, MAX_ROOM_SIZE,
@@ -19,33 +20,46 @@ export class DungeonGenerator {
   }
 
   generate() {
-    for (let attempt = 0; attempt < 10; attempt++) {
-      this.rooms = [];
-      this.coinPositions = [];
-      this.spikePositions = [];
-      this.enemyPaths = [];
-      this.torchPositions = [];
+    for (let attempt = 0; attempt < 50; attempt++) {
+      this._reset();
       this._initGrid();
       this._placeRooms();
       this._connectRooms();
       this._placeEntrance();
       this._placeExit();
 
-      // Validate structural reachability before placing hazards
+      // Layer 1: structural reachability (tile-by-tile walk)
       if (!this._isReachable(this.entrance, this.exit)) continue;
 
       this._placeSpikes();
-      this._ensureSafeSlidePath();
+
+      // Layer 2: validate slide-mechanic reachability
+      if (!this._hasSlidePath()) {
+        // Try to carve a safe corridor and revalidate
+        this._carveSafeSlideCorridor();
+        if (!this._hasSlidePath()) continue; // still stuck, regenerate
+      }
+
       this._placeCoins();
       this._placeEnemies();
       this._placeTorches();
-      console.log(`[DungeonGen] Floor ${this.floor} generated in ${attempt + 1} attempt(s)`);
+      console.log(`[DungeonGen] Floor ${this.floor} OK in ${attempt + 1} attempt(s)`);
       return this;
     }
-    // Fallback: generate a simple guaranteed-winnable level
+    // Fallback: guaranteed-winnable simple level
     console.warn('[DungeonGen] Fallback level generated');
     this._generateFallback();
     return this;
+  }
+
+  _reset() {
+    this.rooms = [];
+    this.coinPositions = [];
+    this.spikePositions = [];
+    this.enemyPaths = [];
+    this.torchPositions = [];
+    this.entrance = null;
+    this.exit = null;
   }
 
   _initGrid() {
@@ -190,7 +204,9 @@ export class DungeonGenerator {
 
   _distTo(x1, y1, x2, y2) { return Math.abs(x1-x2) + Math.abs(y1-y2); }
 
-  // ---- Layer 1: Structural BFS (ignores spikes) ----
+  // ================================================================
+  // VALIDATION LAYER 1: Structural BFS (tile-by-tile, ignores spikes)
+  // ================================================================
   _isReachable(from, to) {
     const visited = Array.from({ length: MAP_ROWS }, () => new Uint8Array(MAP_COLS));
     const queue = [[from.x, from.y]];
@@ -212,35 +228,10 @@ export class DungeonGenerator {
     return false;
   }
 
-  // ---- Layer 2: Slide-mechanic BFS + spike clearing ----
-  _ensureSafeSlidePath() {
-    if (this._hasSlidePath()) return; // already winnable
-
-    // Find structural shortest path and clear spikes along it
-    const path = this._bfsStructuralPath(this.entrance, this.exit);
-    if (!path) return; // should not happen after _isReachable check
-
-    // Clear spikes on the path tiles
-    for (const { x, y } of path) {
-      if (this.grid[y][x] === TILE.SPIKE) {
-        this.grid[y][x] = TILE.FLOOR;
-        this.spikePositions = this.spikePositions.filter(s => s.x !== x || s.y !== y);
-      }
-    }
-
-    // Also clear spikes in a 1-tile margin around path for slide stopping room
-    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-    for (const { x, y } of path) {
-      for (const [dx, dy] of dirs) {
-        const nx = x + dx, ny = y + dy;
-        if (nx >= 0 && nx < MAP_COLS && ny >= 0 && ny < MAP_ROWS && this.grid[ny][nx] === TILE.SPIKE) {
-          this.grid[ny][nx] = TILE.FLOOR;
-          this.spikePositions = this.spikePositions.filter(s => s.x !== nx || s.y !== ny);
-        }
-      }
-    }
-  }
-
+  // ================================================================
+  // VALIDATION LAYER 2: Slide-mechanic BFS
+  // Simulates actual game movement — player slides until hitting wall
+  // ================================================================
   _hasSlidePath() {
     const key = (x, y) => y * MAP_COLS + x;
     const visited = new Set();
@@ -252,7 +243,6 @@ export class DungeonGenerator {
       const { x, y } = queue.shift();
       for (const { dx, dy } of dirs) {
         let cx = x, cy = y, hitSpike = false, reachedExit = false;
-        // Simulate slide
         while (true) {
           const nx = cx + dx, ny = cy + dy;
           if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) break;
@@ -262,14 +252,47 @@ export class DungeonGenerator {
           if (t === TILE.SPIKE) { hitSpike = true; break; }
           if (t === TILE.EXIT) { reachedExit = true; break; }
         }
-        if (cx === x && cy === y) continue; // didn't move
+        if (cx === x && cy === y) continue;
         if (reachedExit) return true;
-        if (hitSpike) continue; // this slide kills the player
+        if (hitSpike) continue;
         const k = key(cx, cy);
         if (!visited.has(k)) { visited.add(k); queue.push({ x: cx, y: cy }); }
       }
     }
     return false;
+  }
+
+  // ================================================================
+  // REPAIR: Carve safe corridor by removing ALL spikes on the
+  // structural shortest path + neighbours, ensuring slide stops
+  // ================================================================
+  _carveSafeSlideCorridor() {
+    const path = this._bfsStructuralPath(this.entrance, this.exit);
+    if (!path) return;
+
+    // Collect all tiles on the path and within 2-tile radius
+    const toClear = new Set();
+    for (const { x, y } of path) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < MAP_COLS && ny >= 0 && ny < MAP_ROWS) {
+            toClear.add(ny * MAP_COLS + nx);
+          }
+        }
+      }
+    }
+
+    // Clear all spikes in that zone
+    for (const k of toClear) {
+      const sx = k % MAP_COLS, sy = Math.floor(k / MAP_COLS);
+      if (this.grid[sy][sx] === TILE.SPIKE) {
+        this.grid[sy][sx] = TILE.FLOOR;
+      }
+    }
+    this.spikePositions = this.spikePositions.filter(
+      s => !toClear.has(s.y * MAP_COLS + s.x)
+    );
   }
 
   _bfsStructuralPath(from, to) {
@@ -281,7 +304,6 @@ export class DungeonGenerator {
     while (queue.length) {
       const { x, y } = queue.shift();
       if (x === to.x && y === to.y) {
-        // Reconstruct path
         const path = [];
         let cur = key(x, y);
         while (cur !== null) {
@@ -304,17 +326,15 @@ export class DungeonGenerator {
     return null;
   }
 
-  // ---- Layer 3: Fallback simple level ----
+  // ================================================================
+  // FALLBACK: Simple guaranteed-winnable level
+  // ================================================================
   _generateFallback() {
-    this.rooms = [];
-    this.coinPositions = [];
-    this.spikePositions = [];
-    this.enemyPaths = [];
-    this.torchPositions = [];
+    this._reset();
     this._initGrid();
 
-    // Carve a simple vertical corridor with rooms
     const cx = Math.floor(MAP_COLS / 2);
+
     // Bottom room (entrance)
     for (let y = MAP_ROWS - 4; y < MAP_ROWS - 1; y++)
       for (let x = cx - 2; x <= cx + 2; x++)
