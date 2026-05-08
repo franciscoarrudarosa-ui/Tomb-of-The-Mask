@@ -19,15 +19,32 @@ export class DungeonGenerator {
   }
 
   generate() {
-    this._initGrid();
-    this._placeRooms();
-    this._connectRooms();
-    this._placeEntrance();
-    this._placeExit();
-    this._placeSpikes();
-    this._placeCoins();
-    this._placeEnemies();
-    this._placeTorches();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      this.rooms = [];
+      this.coinPositions = [];
+      this.spikePositions = [];
+      this.enemyPaths = [];
+      this.torchPositions = [];
+      this._initGrid();
+      this._placeRooms();
+      this._connectRooms();
+      this._placeEntrance();
+      this._placeExit();
+
+      // Validate structural reachability before placing hazards
+      if (!this._isReachable(this.entrance, this.exit)) continue;
+
+      this._placeSpikes();
+      this._ensureSafeSlidePath();
+      this._placeCoins();
+      this._placeEnemies();
+      this._placeTorches();
+      console.log(`[DungeonGen] Floor ${this.floor} generated in ${attempt + 1} attempt(s)`);
+      return this;
+    }
+    // Fallback: generate a simple guaranteed-winnable level
+    console.warn('[DungeonGen] Fallback level generated');
+    this._generateFallback();
     return this;
   }
 
@@ -172,4 +189,161 @@ export class DungeonGenerator {
   }
 
   _distTo(x1, y1, x2, y2) { return Math.abs(x1-x2) + Math.abs(y1-y2); }
+
+  // ---- Layer 1: Structural BFS (ignores spikes) ----
+  _isReachable(from, to) {
+    const visited = Array.from({ length: MAP_ROWS }, () => new Uint8Array(MAP_COLS));
+    const queue = [[from.x, from.y]];
+    visited[from.y][from.x] = 1;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    while (queue.length) {
+      const [cx, cy] = queue.shift();
+      if (cx === to.x && cy === to.y) return true;
+      for (const [dx, dy] of dirs) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) continue;
+        if (visited[ny][nx]) continue;
+        const t = this.grid[ny][nx];
+        if (t === TILE.WALL || t === TILE.GATE) continue;
+        visited[ny][nx] = 1;
+        queue.push([nx, ny]);
+      }
+    }
+    return false;
+  }
+
+  // ---- Layer 2: Slide-mechanic BFS + spike clearing ----
+  _ensureSafeSlidePath() {
+    if (this._hasSlidePath()) return; // already winnable
+
+    // Find structural shortest path and clear spikes along it
+    const path = this._bfsStructuralPath(this.entrance, this.exit);
+    if (!path) return; // should not happen after _isReachable check
+
+    // Clear spikes on the path tiles
+    for (const { x, y } of path) {
+      if (this.grid[y][x] === TILE.SPIKE) {
+        this.grid[y][x] = TILE.FLOOR;
+        this.spikePositions = this.spikePositions.filter(s => s.x !== x || s.y !== y);
+      }
+    }
+
+    // Also clear spikes in a 1-tile margin around path for slide stopping room
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const { x, y } of path) {
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < MAP_COLS && ny >= 0 && ny < MAP_ROWS && this.grid[ny][nx] === TILE.SPIKE) {
+          this.grid[ny][nx] = TILE.FLOOR;
+          this.spikePositions = this.spikePositions.filter(s => s.x !== nx || s.y !== ny);
+        }
+      }
+    }
+  }
+
+  _hasSlidePath() {
+    const key = (x, y) => y * MAP_COLS + x;
+    const visited = new Set();
+    const queue = [{ x: this.entrance.x, y: this.entrance.y }];
+    visited.add(key(this.entrance.x, this.entrance.y));
+    const dirs = [{ dx:1, dy:0 }, { dx:-1, dy:0 }, { dx:0, dy:1 }, { dx:0, dy:-1 }];
+
+    while (queue.length) {
+      const { x, y } = queue.shift();
+      for (const { dx, dy } of dirs) {
+        let cx = x, cy = y, hitSpike = false, reachedExit = false;
+        // Simulate slide
+        while (true) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) break;
+          const t = this.grid[ny][nx];
+          if (t === TILE.WALL || t === TILE.GATE) break;
+          cx = nx; cy = ny;
+          if (t === TILE.SPIKE) { hitSpike = true; break; }
+          if (t === TILE.EXIT) { reachedExit = true; break; }
+        }
+        if (cx === x && cy === y) continue; // didn't move
+        if (reachedExit) return true;
+        if (hitSpike) continue; // this slide kills the player
+        const k = key(cx, cy);
+        if (!visited.has(k)) { visited.add(k); queue.push({ x: cx, y: cy }); }
+      }
+    }
+    return false;
+  }
+
+  _bfsStructuralPath(from, to) {
+    const key = (x, y) => y * MAP_COLS + x;
+    const visited = new Map();
+    const queue = [{ x: from.x, y: from.y }];
+    visited.set(key(from.x, from.y), null);
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    while (queue.length) {
+      const { x, y } = queue.shift();
+      if (x === to.x && y === to.y) {
+        // Reconstruct path
+        const path = [];
+        let cur = key(x, y);
+        while (cur !== null) {
+          path.push({ x: cur % MAP_COLS, y: Math.floor(cur / MAP_COLS) });
+          cur = visited.get(cur);
+        }
+        return path;
+      }
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) continue;
+        const t = this.grid[ny][nx];
+        if (t === TILE.WALL || t === TILE.GATE) continue;
+        const k = key(nx, ny);
+        if (visited.has(k)) continue;
+        visited.set(k, key(x, y));
+        queue.push({ x: nx, y: ny });
+      }
+    }
+    return null;
+  }
+
+  // ---- Layer 3: Fallback simple level ----
+  _generateFallback() {
+    this.rooms = [];
+    this.coinPositions = [];
+    this.spikePositions = [];
+    this.enemyPaths = [];
+    this.torchPositions = [];
+    this._initGrid();
+
+    // Carve a simple vertical corridor with rooms
+    const cx = Math.floor(MAP_COLS / 2);
+    // Bottom room (entrance)
+    for (let y = MAP_ROWS - 4; y < MAP_ROWS - 1; y++)
+      for (let x = cx - 2; x <= cx + 2; x++)
+        if (x >= 1 && x < MAP_COLS - 1) this.grid[y][x] = TILE.FLOOR;
+    this.rooms.push({ x: cx - 2, y: MAP_ROWS - 4, w: 5, h: 3, cx, cy: MAP_ROWS - 3 });
+
+    // Top room (exit)
+    for (let y = 2; y < 5; y++)
+      for (let x = cx - 2; x <= cx + 2; x++)
+        if (x >= 1 && x < MAP_COLS - 1) this.grid[y][x] = TILE.FLOOR;
+    this.rooms.push({ x: cx - 2, y: 2, w: 5, h: 3, cx, cy: 3 });
+
+    // Middle room
+    const my = Math.floor(MAP_ROWS / 2);
+    for (let y = my - 1; y <= my + 1; y++)
+      for (let x = cx - 2; x <= cx + 2; x++)
+        if (x >= 1 && x < MAP_COLS - 1) this.grid[y][x] = TILE.FLOOR;
+    this.rooms.push({ x: cx - 2, y: my - 1, w: 5, h: 3, cx, cy: my });
+
+    // Connect with corridors
+    this._carveCorridorL(cx, MAP_ROWS - 3, cx, my);
+    this._carveCorridorL(cx, my, cx, 3);
+
+    this.entrance = { x: cx, y: MAP_ROWS - 3 };
+    this.grid[MAP_ROWS - 3][cx] = TILE.ENTRANCE;
+    this.exit = { x: cx, y: 3 };
+    this.grid[3][cx] = TILE.EXIT;
+
+    this._placeCoins();
+    this._placeTorches();
+  }
 }
