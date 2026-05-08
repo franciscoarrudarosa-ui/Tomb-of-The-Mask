@@ -3,8 +3,8 @@
 // ============================================
 
 export const TILE_SIZE = 32;
-export const MAP_COLS = 11;
-export const MAP_ROWS = 20;
+export const MAP_COLS = 22;
+export const MAP_ROWS = 14;
 
 export const GAME_WIDTH = MAP_COLS * TILE_SIZE;
 export const GAME_HEIGHT = MAP_ROWS * TILE_SIZE;
@@ -38,8 +38,8 @@ export const TIDE_SPEED_INCREMENT = 2;
 export const COIN_SCORE = 100;
 export const FLOOR_BONUS = 500;
 export const STARTING_LIVES = 1;
-export const MIN_ROOMS = 3;
-export const MAX_ROOMS = 6;
+export const MIN_ROOMS = 4;
+export const MAX_ROOMS = 8;
 export const MIN_ROOM_SIZE = 3;
 export const MAX_ROOM_SIZE = 5;
 export const SPIKE_DENSITY = 0.08;
