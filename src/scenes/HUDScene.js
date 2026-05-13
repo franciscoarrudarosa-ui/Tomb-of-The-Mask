@@ -59,12 +59,12 @@ export class HUDScene extends Phaser.Scene {
     if (!this.tideBar) return;
     const { width } = this.scale;
     const barX = width - 20, barTop = 50, barH = this.tideBarHeight;
-    const tidePct = Math.min(1, 1 - (tideWorldY / mapHeight));
+    const tidePct = Math.min(1, Math.max(0, 1 - (tideWorldY / mapHeight)));
     this.tideBar.clear();
     this.tideBar.fillStyle(COLORS.TIDE_PURPLE, 0.8);
     const fillH = barH * tidePct;
     this.tideBar.fillRect(barX, barTop + barH - fillH, 8, fillH);
-    const playerPct = Math.min(1, 1 - (playerWorldY / mapHeight));
+    const playerPct = Math.min(1, Math.max(0, 1 - (playerWorldY / mapHeight)));
     this.tideBar.fillStyle(COLORS.PLAYER_VISOR, 1);
     this.tideBar.fillCircle(barX + 4, barTop + barH - (barH * playerPct), 3);
   }
