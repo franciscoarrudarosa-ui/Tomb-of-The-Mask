@@ -24,40 +24,44 @@ export class DungeonGenerator {
   }
 
   generate() {
-    this._reset();
-    this._initGrid();
-    
-    // Create maze
-    this._generateMaze();
-    
-    // Add open chambers
-    this._placeChambers();
-    
-    // Entrance at bottom, exit at top
-    this._placeEntranceAndExit();
-    
-    // Ensure reachability
-    if (!this._isReachable(this.entrance, this.exit)) {
-       console.warn('[DungeonGen] Unreachable, generating fallback');
-       this._generateFallback();
-    }
-    
-    // Place entities
-    this._placeSpikes();
-    this._placeTraps();
-    this._placeTorches();
-    
-    // Validate slide path
-    if (!this._hasSlidePath()) {
-        this._carveSafeSlideCorridor();
-    }
-    
-    this._placeTeleporters();
-    this._placeSwitches();
-    this._placeCoins();
-    this._placePowerUps();
-    this._placeEnemies();
+    for (let attempt = 0; attempt < 150; attempt++) {
+      this._reset();
+      this._initGrid();
+      
+      // Create maze
+      this._generateMaze();
+      
+      // Add open chambers
+      this._placeChambers();
+      
+      // Entrance at bottom, exit at top
+      this._placeEntranceAndExit();
+      
+      // Ensure reachability
+      if (!this._isReachable(this.entrance, this.exit)) continue;
+      
+      // Place entities that affect slide path
+      this._placeSpikes();
+      this._placeTraps();
+      this._placeTeleporters();
+      this._placeSwitches();
+      
+      // Validate true slide path
+      if (!this._hasSlidePath()) continue;
+      
+      // Place remaining entities
+      this._placeTorches();
+      this._placeCoins();
+      this._placePowerUps();
+      this._placeEnemies();
 
+      console.log(`[DungeonGen] Floor ${this.floor} generated in ${attempt + 1} attempts`);
+      return this;
+    }
+    
+    console.warn('[DungeonGen] Unreachable after 150 attempts, generating fallback');
+    this._generateFallback();
+    this._placeCoins();
     return this;
   }
 
@@ -136,7 +140,7 @@ export class DungeonGenerator {
     }
     
     // Add some random loops to make it less perfect
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 8; i++) {
        const r = 1 + Math.floor(Math.random() * (MAP_ROWS - 2));
        const c = 1 + Math.floor(Math.random() * (MAP_COLS - 2));
        if (this.grid[r][c] === TILE.WALL) {
@@ -152,10 +156,10 @@ export class DungeonGenerator {
   }
 
   _placeChambers() {
-    const numChambers = 3 + Math.floor(this.floor * 0.2);
+    const numChambers = 1 + Math.floor(this.floor * 0.1); // Reduced to favor corridors
     for (let i = 0; i < numChambers; i++) {
-        const w = 4 + Math.floor(Math.random() * 3);
-        const h = 4 + Math.floor(Math.random() * 3);
+        const w = 3 + Math.floor(Math.random() * 2);
+        const h = 3 + Math.floor(Math.random() * 2);
         const x = 2 + Math.floor(Math.random() * (MAP_COLS - w - 4));
         const y = 4 + Math.floor(Math.random() * (MAP_ROWS - h - 8)); // avoid extreme top/bottom
         
@@ -423,18 +427,57 @@ export class DungeonGenerator {
   }
 
   _hasSlidePath() {
-    // simplified for brevity, just checks structural path for now as full slide validation is complex with vertical map
-    return this._isReachable(this.entrance, this.exit);
-  }
+    const key = (x, y) => y * MAP_COLS + x;
+    const visited = new Set();
+    const queue = [{ x: this.entrance.x, y: this.entrance.y }];
+    visited.add(key(this.entrance.x, this.entrance.y));
+    const dirs = [{ dx:1, dy:0 }, { dx:-1, dy:0 }, { dx:0, dy:1 }, { dx:0, dy:-1 }];
 
-  _carveSafeSlideCorridor() {
-      // Just clear spikes near entrance/exit if blocked
-      this.spikePositions = [];
-      for(let y=0; y<MAP_ROWS; y++) {
-          for(let x=0; x<MAP_COLS; x++) {
-              if (this.grid[y][x] === TILE.SPIKE) this.grid[y][x] = TILE.FLOOR;
-          }
+    while (queue.length) {
+      const { x, y } = queue.shift();
+      for (const { dx, dy } of dirs) {
+        let hitSpike = false, reachedExit = false, hitStopTile = false;
+        let destX = x, destY = y;
+        
+        while (true) {
+          const nx = destX + dx, ny = destY + dy;
+          if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) break;
+          const t = this.grid[ny][nx];
+          if (t === TILE.WALL || t === TILE.GATE) break;
+          
+          destX = nx; destY = ny;
+          
+          if (t === TILE.SPIKE || t === TILE.TIMED_SPIKE) { hitSpike = true; break; }
+          if (t === TILE.EXIT) { reachedExit = true; break; }
+          if (t === TILE.SWITCH || t === TILE.TELEPORT_A || t === TILE.TELEPORT_B) { hitStopTile = true; break; }
+        }
+        
+        if (destX === x && destY === y) continue;
+        if (reachedExit) return true;
+        
+        if (hitStopTile) {
+            const t = this.grid[destY][destX];
+            if (t === TILE.TELEPORT_A || t === TILE.TELEPORT_B) {
+                const tp = this.teleporters.find(tele => 
+                    (tele.x1 === destX && tele.y1 === destY) || (tele.x2 === destX && tele.y2 === destY)
+                );
+                if (tp) {
+                    destX = destX === tp.x1 ? tp.x2 : tp.x1;
+                    destY = destY === tp.y1 ? tp.y2 : tp.y1;
+                }
+            }
+        }
+        
+        if (hitSpike) continue;
+        
+        const k = key(destX, destY);
+        if (!visited.has(k)) { 
+            visited.add(k); 
+            queue.push({ x: destX, y: destY }); 
+        }
       }
+    }
+    return false;
   }
 
   _generateFallback() {
