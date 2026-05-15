@@ -4,7 +4,7 @@
 
 export const TILE_SIZE = 32;
 export const MAP_COLS = 22;
-export const MAP_ROWS = 14;
+export const MAP_ROWS = 40; // Increased for vertical scrolling
 
 export const GAME_WIDTH = MAP_COLS * TILE_SIZE;
 export const GAME_HEIGHT = MAP_ROWS * TILE_SIZE;
@@ -12,7 +12,10 @@ export const GAME_HEIGHT = MAP_ROWS * TILE_SIZE;
 export const TILE = {
   VOID: 0, WALL: 1, FLOOR: 2, SPIKE: 3, COIN: 4,
   EXIT: 5, ENTRANCE: 6, SWITCH: 7, GATE: 8, TORCH: 9, ENEMY_PATH: 10,
-  PORTAL_IN: 11, PORTAL_OUT: 12
+  PORTAL_IN: 11, PORTAL_OUT: 12,
+  TIMED_SPIKE: 13, CRUMBLE: 14, DART_LAUNCHER: 15,
+  TELEPORT_A: 16, TELEPORT_B: 17,
+  POWERUP_SHIELD: 18, POWERUP_FREEZE: 19, POWERUP_MAGNET: 20
 };
 
 export const COLORS = {
@@ -26,12 +29,34 @@ export const COLORS = {
   EXIT_CYAN: 0x06d6a0, EXIT_GLOW: 0x00f5d4,
   TORCH_ORANGE: 0xff9f43, TORCH_YELLOW: 0xffd93d,
   TIDE_PURPLE: 0x533483,
-  ENEMY_GREEN: 0x2ecc71, ENEMY_DARK: 0x1a8a4a,
+  ENEMY_GREEN: 0x2ecc71, ENEMY_DARK: 0x1a8a4a, ENEMY_RED: 0xe74c3c, ENEMY_BLUE: 0x3498db,
   SWITCH_BLUE: 0x3498db, GATE_BROWN: 0x8b6914,
   UI_PARCHMENT: 0xd4b896, UI_INK: 0x2c1810,
   TEXT_GOLD: 0xf5c518, TEXT_WHITE: 0xe8e8f0,
-  PORTAL_PURPLE: 0x9b59b6, PORTAL_GLOW: 0xd2b4de
+  PORTAL_PURPLE: 0x9b59b6, PORTAL_GLOW: 0xd2b4de,
+  TELEPORT_A: 0x9b59b6, TELEPORT_B: 0x1abc9c,
+  POWERUP_SHIELD: 0xf1c40f, POWERUP_FREEZE: 0x00cec9, POWERUP_MAGNET: 0xd63031,
+  DART_GREY: 0x7f8c8d
 };
+
+export const BIOMES = [
+  { // 1-5: Catacombs
+    wallMid: COLORS.WALL_MID, wallDark: COLORS.WALL_DARK, wallLight: COLORS.WALL_LIGHT, wallHigh: COLORS.WALL_HIGHLIGHT,
+    floorMid: COLORS.FLOOR_MID, floorDark: COLORS.FLOOR_DARK, floorLight: COLORS.FLOOR_LIGHT
+  },
+  { // 6-10: Fire Ruins
+    wallMid: 0x4a2a2a, wallDark: 0x2a1a1a, wallLight: 0x6a3a3a, wallHigh: 0x8a4a4a,
+    floorMid: 0x3a1e1e, floorDark: 0x1e0f0f, floorLight: 0x4a2e2e
+  },
+  { // 11-15: Ice Crypt
+    wallMid: 0x2a4a5a, wallDark: 0x1a2a3a, wallLight: 0x3a5a7a, wallHigh: 0x4a6a8a,
+    floorMid: 0x1e3a4a, floorDark: 0x0f1e2e, floorLight: 0x2e4a5a
+  },
+  { // 16+: Abyss
+    wallMid: 0x1a0525, wallDark: 0x0a0010, wallLight: 0x2a1040, wallHigh: 0x3a1555,
+    floorMid: 0x150020, floorDark: 0x05000a, floorLight: 0x200530
+  }
+];
 
 export const PLAYER_SLIDE_SPEED = 600;
 export const PLAYER_SLIDE_DURATION_PER_TILE = 50;
@@ -50,7 +75,15 @@ export const ENEMY_CHANCE = 0.4;
 
 export const DIFFICULTY = {
   ROOMS_PER_FLOOR: 0.3,
-  SPIKE_PER_FLOOR: 0.01,
+  SPIKE_PER_FLOOR: 0.015,
   CORRIDOR_NARROW_FLOOR: 5,
-  MAX_ENEMIES: 5
+  MAX_ENEMIES: 10,
+  TIMED_SPIKE_CHANCE_BASE: 0.05,
+  DART_LAUNCHER_CHANCE_BASE: 0.03,
+  CRUMBLE_CHANCE_BASE: 0.05
 };
+
+export const ENEMY_TYPES = { PATROL: 0, CHASER: 1, ORBITER: 2 };
+export const POWERUP_TYPES = { SHIELD: 0, FREEZE: 1, MAGNET: 2 };
+export const POWERUP_DURATION = { FREEZE: 4000, MAGNET: 6000 };
+export const MAGNET_RADIUS = 3;
