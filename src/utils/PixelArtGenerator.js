@@ -1,4 +1,4 @@
-import { TILE_SIZE, COLORS } from '../constants.js';
+import { TILE_SIZE, COLORS, BIOMES } from '../constants.js';
 
 function hexToRgba(hex, alpha = 1) {
   const r = (hex >> 16) & 0xff, g = (hex >> 8) & 0xff, b = hex & 0xff;
@@ -15,31 +15,35 @@ function pxR(ctx, x, y, w, h, color, s = 1) {
   ctx.fillRect(x * s, y * s, w * s, h * s);
 }
 
-export function generateAllSprites(scene) {
+export function generateAllSprites(scene, floor = 1) {
   const S = TILE_SIZE, P = 2;
-  genWall(scene,S,P); genFloor(scene,S,P); genPlayer(scene,S,P);
+  const biomeIdx = Math.min(Math.floor((floor - 1) / 5), BIOMES.length - 1);
+  const biome = BIOMES[biomeIdx];
+
+  genWall(scene,S,P,biome); genFloor(scene,S,P,biome); genPlayer(scene,S,P);
   genCoin(scene,S,P); genSpike(scene,S,P); genExit(scene,S,P);
   genTorch(scene,S,P); genEnemy(scene,S,P); genParticles(scene);
   genSwitch(scene,S,P); genGate(scene,S,P);
+  genPowerUps(scene,S,P); genTraps(scene,S,P); genTeleporters(scene,S,P);
 }
 
-function genWall(sc,S,P){
+function genWall(sc,S,P,biome){
   const c=sc.textures.createCanvas('wall',S,S), x=c.context;
-  pxR(x,0,0,16,16,COLORS.WALL_MID,P);
-  pxR(x,0,0,16,1,COLORS.WALL_HIGHLIGHT,P); pxR(x,0,0,1,8,COLORS.WALL_HIGHLIGHT,P);
-  pxR(x,0,8,16,1,COLORS.WALL_DARK,P); pxR(x,8,0,1,8,COLORS.WALL_DARK,P);
-  pxR(x,0,9,16,1,COLORS.WALL_HIGHLIGHT,P); pxR(x,4,9,1,7,COLORS.WALL_DARK,P);
-  pxR(x,12,9,1,7,COLORS.WALL_DARK,P);
-  for(let i=0;i<6;i++) px(x,~~(Math.random()*15),~~(Math.random()*15),Math.random()>0.5?COLORS.WALL_DARK:COLORS.WALL_LIGHT,P);
+  pxR(x,0,0,16,16,biome.wallMid,P);
+  pxR(x,0,0,16,1,biome.wallHigh,P); pxR(x,0,0,1,8,biome.wallHigh,P);
+  pxR(x,0,8,16,1,biome.wallDark,P); pxR(x,8,0,1,8,biome.wallDark,P);
+  pxR(x,0,9,16,1,biome.wallHigh,P); pxR(x,4,9,1,7,biome.wallDark,P);
+  pxR(x,12,9,1,7,biome.wallDark,P);
+  for(let i=0;i<6;i++) px(x,~~(Math.random()*15),~~(Math.random()*15),Math.random()>0.5?biome.wallDark:biome.wallLight,P);
   c.refresh();
 }
 
-function genFloor(sc,S,P){
+function genFloor(sc,S,P,biome){
   const c=sc.textures.createCanvas('floor',S,S), x=c.context;
-  pxR(x,0,0,16,16,COLORS.FLOOR_MID,P);
-  pxR(x,0,0,16,1,COLORS.FLOOR_LIGHT,P); pxR(x,0,0,1,16,COLORS.FLOOR_LIGHT,P);
-  pxR(x,15,0,1,16,COLORS.FLOOR_DARK,P); pxR(x,0,15,16,1,COLORS.FLOOR_DARK,P);
-  for(let i=0;i<3;i++) px(x,~~(Math.random()*14)+1,~~(Math.random()*14)+1,COLORS.FLOOR_DARK,P);
+  pxR(x,0,0,16,16,biome.floorMid,P);
+  pxR(x,0,0,16,1,biome.floorLight,P); pxR(x,0,0,1,16,biome.floorLight,P);
+  pxR(x,15,0,1,16,biome.floorDark,P); pxR(x,0,15,16,1,biome.floorDark,P);
+  for(let i=0;i<3;i++) px(x,~~(Math.random()*14)+1,~~(Math.random()*14)+1,biome.floorDark,P);
   c.refresh();
 }
 
@@ -108,17 +112,33 @@ function genTorch(sc,S,P){
 }
 
 function genEnemy(sc,S,P){
-  for(let f=0;f<2;f++){
-    const c=sc.textures.createCanvas(`enemy_${f}`,S,S), x=c.context;
-    pxR(x,5,3,6,8,COLORS.ENEMY_GREEN,P); pxR(x,4,4,8,6,COLORS.ENEMY_DARK,P);
-    pxR(x,5,1,6,4,COLORS.ENEMY_GREEN,P);
-    pxR(x,6,2,2,2,COLORS.SPIKE_RED,P); pxR(x,10,2,2,2,COLORS.SPIKE_RED,P);
-    px(x,7,2,COLORS.TEXT_WHITE,P); px(x,11,2,COLORS.TEXT_WHITE,P);
-    const lx=f===0?5:6, rx=f===0?9:8;
-    pxR(x,lx,11,2,4,COLORS.ENEMY_DARK,P); pxR(x,rx,11,2,4,COLORS.ENEMY_DARK,P);
-    pxR(x,3,5,2,3,COLORS.ENEMY_GREEN,P); pxR(x,11,5,2,3,COLORS.ENEMY_GREEN,P);
-    c.refresh();
-  }
+  const types = [
+    { key: 'enemy_patrol', main: COLORS.ENEMY_GREEN, dark: COLORS.ENEMY_DARK },
+    { key: 'enemy_chaser', main: COLORS.ENEMY_RED, dark: 0xa83232 },
+    { key: 'enemy_orbiter', main: COLORS.ENEMY_BLUE, dark: 0x2980b9 }
+  ];
+
+  types.forEach(t => {
+    for(let f=0;f<2;f++){
+      const c=sc.textures.createCanvas(`${t.key}_${f}`,S,S), x=c.context;
+      pxR(x,5,3,6,8,t.main,P); pxR(x,4,4,8,6,t.dark,P);
+      pxR(x,5,1,6,4,t.main,P);
+      pxR(x,6,2,2,2,COLORS.SPIKE_RED,P); pxR(x,10,2,2,2,COLORS.SPIKE_RED,P);
+      px(x,7,2,COLORS.TEXT_WHITE,P); px(x,11,2,COLORS.TEXT_WHITE,P);
+      const lx=f===0?5:6, rx=f===0?9:8;
+      pxR(x,lx,11,2,4,t.dark,P); pxR(x,rx,11,2,4,t.dark,P);
+      pxR(x,3,5,2,3,t.main,P); pxR(x,11,5,2,3,t.main,P);
+      if(t.key === 'enemy_orbiter') { px(x,7,4,COLORS.TEXT_WHITE,P); px(x,8,4,COLORS.TEXT_WHITE,P); }
+      c.refresh();
+    }
+  });
+
+  // Frozen state overlay
+  const c=sc.textures.createCanvas('frozen_overlay',S,S), x=c.context;
+  pxR(x,3,1,10,14,COLORS.POWERUP_FREEZE,P);
+  c.context.globalCompositeOperation = 'destination-in';
+  pxR(x,0,0,16,16,'rgba(0,0,0,0.6)',P);
+  c.refresh();
 }
 
 function genParticles(sc){
@@ -163,4 +183,85 @@ function genGate(sc,S,P){
   pxR(x,0,2,16,1,COLORS.WALL_LIGHT,P); pxR(x,0,8,16,1,COLORS.WALL_LIGHT,P);
   pxR(x,0,14,16,1,COLORS.WALL_LIGHT,P);
   c.refresh();
+}
+
+function genPowerUps(sc,S,P){
+  const pUps = [
+    { key: 'powerup_shield', color: COLORS.POWERUP_SHIELD },
+    { key: 'powerup_freeze', color: COLORS.POWERUP_FREEZE },
+    { key: 'powerup_magnet', color: COLORS.POWERUP_MAGNET }
+  ];
+  pUps.forEach(p => {
+    const c=sc.textures.createCanvas(p.key,S,S), x=c.context;
+    pxR(x,4,4,8,8,COLORS.VOID,P);
+    pxR(x,5,3,6,10,p.color,P); pxR(x,3,5,10,6,p.color,P);
+    pxR(x,6,5,4,6,COLORS.TEXT_WHITE,P);
+    if(p.key === 'powerup_shield') { pxR(x,7,4,2,2,COLORS.TEXT_GOLD,P); }
+    if(p.key === 'powerup_freeze') { pxR(x,7,7,2,2,COLORS.TEXT_WHITE,P); px(x,6,6,COLORS.TEXT_WHITE,P); }
+    if(p.key === 'powerup_magnet') { pxR(x,6,5,1,3,COLORS.TEXT_GOLD,P); pxR(x,9,5,1,3,COLORS.TEXT_GOLD,P); }
+    c.refresh();
+  });
+}
+
+function genTraps(sc,S,P){
+  // Timed Spikes
+  for(let f=0;f<2;f++){
+    const c=sc.textures.createCanvas(`timed_spike_${f}`,S,S), x=c.context;
+    pxR(x,1,13,14,2,COLORS.SPIKE_DARK,P);
+    if (f === 1) { // Active
+      [{bx:2,ty:4},{bx:6,ty:2},{bx:10,ty:5}].forEach(s=>{
+        for(let y=13;y>=s.ty;y--){
+          const p=(13-y)/(13-s.ty), hw=Math.max(0,~~(1.5*(1-p))), cx=s.bx+1;
+          for(let d=-hw;d<=hw;d++) px(x,cx+d,y,p>0.7?COLORS.SPIKE_RED:COLORS.SPIKE_DARK,P);
+        }
+        px(x,s.bx+1,s.ty,COLORS.TEXT_WHITE,P);
+      });
+    } else { // Inactive
+      pxR(x,2,11,12,2,COLORS.WALL_DARK,P);
+    }
+    c.refresh();
+  }
+
+  // Dart Launcher
+  const cDartL=sc.textures.createCanvas('dart_launcher',S,S), xDartL=cDartL.context;
+  pxR(xDartL,2,2,12,12,COLORS.WALL_DARK,P);
+  pxR(xDartL,4,4,8,8,COLORS.VOID,P);
+  pxR(xDartL,6,6,4,4,COLORS.DART_GREY,P);
+  cDartL.refresh();
+
+  // Dart
+  const cDart=sc.textures.createCanvas('dart',S,S), xDart=cDart.context;
+  pxR(xDart,4,7,8,2,COLORS.DART_GREY,P);
+  pxR(xDart,10,6,2,4,COLORS.TEXT_WHITE,P);
+  px(xDart,12,7,COLORS.SPIKE_RED,P); px(xDart,12,8,COLORS.SPIKE_RED,P);
+  cDart.refresh();
+
+  // Crumble Floor
+  for(let f=0;f<3;f++){
+    const c=sc.textures.createCanvas(`crumble_${f}`,S,S), x=c.context;
+    pxR(x,2,2,12,12,COLORS.FLOOR_DARK,P);
+    if(f === 0) { // Solid
+      pxR(x,3,3,10,10,COLORS.FLOOR_MID,P);
+    } else if (f === 1) { // Cracking
+      pxR(x,3,3,10,10,COLORS.FLOOR_MID,P);
+      pxR(x,5,5,6,1,COLORS.VOID,P); pxR(x,7,4,1,6,COLORS.VOID,P);
+    } else { // Broken (mostly transparent)
+      px(x,3,3,COLORS.FLOOR_MID,P); px(x,12,12,COLORS.FLOOR_MID,P);
+    }
+    c.refresh();
+  }
+}
+
+function genTeleporters(sc,S,P){
+  const tps = [{key: 'teleport_a', c: COLORS.TELEPORT_A}, {key: 'teleport_b', c: COLORS.TELEPORT_B}];
+  tps.forEach(tp => {
+    for(let f=0;f<2;f++){
+      const c=sc.textures.createCanvas(`${tp.key}_${f}`,S,S), x=c.context;
+      const r = f === 0 ? 5 : 6;
+      pxR(x, 8-r, 8-r, r*2, r*2, tp.c, P);
+      pxR(x, 8-(r-2), 8-(r-2), (r-2)*2, (r-2)*2, COLORS.VOID, P);
+      px(x, 7, 7, COLORS.TEXT_WHITE, P); px(x, 8, 8, COLORS.TEXT_WHITE, P);
+      c.refresh();
+    }
+  });
 }
