@@ -8,8 +8,9 @@ export class RisingTide {
   constructor(scene, floor = 1) {
     this.scene = scene;
     this.floor = floor;
-    this.speed = TIDE_BASE_SPEED + (floor - 1) * TIDE_SPEED_INCREMENT;
-    this.y = 0;
+    this.baseSpeed = TIDE_BASE_SPEED + (floor - 1) * TIDE_SPEED_INCREMENT;
+    this.speed = this.baseSpeed;
+    this.y = 0; // distance from bottom
     this.active = false;
     this.graphics = null;
     this.particles = null;
@@ -25,12 +26,12 @@ export class RisingTide {
     this.graphics = this.scene.add.graphics();
     this.graphics.setDepth(15);
     this.particles = this.scene.add.particles(0, 0, 'tide_particle', {
-      speed: { min: 5, max: 20 },
+      speed: { min: 10, max: 30 },
       angle: { min: 250, max: 290 },
-      scale: { start: 1, end: 0 },
-      alpha: { start: 0.6, end: 0 },
-      lifespan: 600,
-      frequency: 40,
+      scale: { start: 1.5, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      lifespan: 800,
+      frequency: 30,
       emitting: false,
       blendMode: 'ADD'
     });
@@ -46,25 +47,38 @@ export class RisingTide {
 
   update(delta, playerY) {
     if (!this.active) return 'safe';
-    this.y += this.speed * (delta / 1000);
+    
+    // Adaptive speed: catch up if player is too far ahead
     const tideWorldY = this.mapHeight - this.y;
-
-    this.graphics.clear();
-    this.graphics.fillStyle(COLORS.TIDE_PURPLE, 0.6);
-    this.graphics.fillRect(0, tideWorldY, MAP_COLS * TILE_SIZE, this.y + 100);
-    for (let i = 0; i < 8; i++) {
-      this.graphics.fillStyle(COLORS.TIDE_PURPLE, 0.4 * (1 - i / 8));
-      this.graphics.fillRect(0, tideWorldY - (i * 4), MAP_COLS * TILE_SIZE, 4);
+    const distToPlayer = tideWorldY - playerY;
+    
+    if (distToPlayer > 800) {
+       this.speed = this.baseSpeed * 2.5; // Catch up fast
+    } else if (distToPlayer > 400) {
+       this.speed = this.baseSpeed * 1.5;
+    } else {
+       this.speed = this.baseSpeed;
     }
 
-    if (this.particles) this.particles.setPosition(MAP_COLS * TILE_SIZE / 2, tideWorldY);
+    this.y += this.speed * (delta / 1000);
+    const newTideWorldY = this.mapHeight - this.y;
 
-    if (playerY > tideWorldY) return 'dead';
-    if (playerY - tideWorldY < 100 && !this.warningTriggered) {
+    this.graphics.clear();
+    this.graphics.fillStyle(COLORS.TIDE_PURPLE, 0.7);
+    this.graphics.fillRect(0, newTideWorldY, MAP_COLS * TILE_SIZE, this.y + 200);
+    for (let i = 0; i < 8; i++) {
+      this.graphics.fillStyle(COLORS.TIDE_PURPLE, 0.5 * (1 - i / 8));
+      this.graphics.fillRect(0, newTideWorldY - (i * 4), MAP_COLS * TILE_SIZE, 4);
+    }
+
+    if (this.particles) this.particles.setPosition(MAP_COLS * TILE_SIZE / 2, newTideWorldY);
+
+    if (playerY > newTideWorldY) return 'dead';
+    if (playerY - newTideWorldY < 150 && !this.warningTriggered) {
       this.warningTriggered = true;
       return 'warning';
     }
-    if (playerY - tideWorldY >= 100) this.warningTriggered = false;
+    if (playerY - newTideWorldY >= 150) this.warningTriggered = false;
     return 'safe';
   }
 
