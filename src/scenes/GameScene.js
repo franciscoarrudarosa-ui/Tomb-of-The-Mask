@@ -2,7 +2,7 @@
 // GameScene — Core gameplay loop
 // ============================================
 
-import { TILE_SIZE, MAP_COLS, MAP_ROWS, TILE, COLORS, COIN_SCORE, FLOOR_BONUS } from '../constants.js';
+import { TILE_SIZE, MAP_COLS, MAP_ROWS, TILE, COLORS, COIN_SCORE, FLOOR_BONUS, POWERUP_DURATION, MAGNET_RADIUS } from '../constants.js';
 import { DungeonGenerator } from '../systems/DungeonGenerator.js';
 import { InputManager } from '../systems/InputManager.js';
 import { ParticleTrail } from '../systems/ParticleTrail.js';
@@ -10,6 +10,8 @@ import { RisingTide } from '../systems/RisingTide.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { Collectible } from '../entities/Collectible.js';
+import { Trap } from '../entities/Trap.js';
+import { PowerUp } from '../entities/PowerUp.js';
 import { soundGen } from '../utils/SoundGenerator.js';
 
 export class GameScene extends Phaser.Scene {
@@ -20,6 +22,7 @@ export class GameScene extends Phaser.Scene {
     this.score = data.score || 0;
     this.totalCoins = data.coins || 0;
     this.gameOver = false;
+    this.isFrozen = false;
   }
 
   create() {
@@ -40,11 +43,11 @@ export class GameScene extends Phaser.Scene {
     this.trail = new ParticleTrail(this);
     this.trail.create(this.player.sprite);
 
-    // Collectibles
+    // Entities
     this.collectibles = this.dungeon.coinPositions.map(p => new Collectible(this, p.x, p.y));
-
-    // Enemies
     this.enemies = this.dungeon.enemyPaths.map(p => new Enemy(this, p));
+    this.traps = this.dungeon.trapPositions.map(p => new Trap(this, p.x, p.y, p.type));
+    this.powerUps = this.dungeon.powerUpPositions.map(p => new PowerUp(this, p.x, p.y, p.type));
 
     // Torches
     this.torchSprites = [];
@@ -69,9 +72,11 @@ export class GameScene extends Phaser.Scene {
     // Input
     this.inputManager = new InputManager(this);
 
-    // Camera follows player
+    // Camera follows player but restricted to map bounds
+    this.cameras.main.setBounds(0, 0, MAP_COLS * TILE_SIZE, MAP_ROWS * TILE_SIZE);
     this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.15);
-    this.cameras.main.setDeadzone(0, 80);
+    // Vertical deadzone so camera doesn't move on small vertical adjustments
+    this.cameras.main.setDeadzone(0, 100); 
 
     // HUD
     this.scene.launch('HUDScene', { floor: this.floor, score: this.score, coins: this.totalCoins });
@@ -81,17 +86,24 @@ export class GameScene extends Phaser.Scene {
 
   _renderMap() {
     this.mapTiles = [];
+    
+    // Build static gate images array
+    this.gateSprites = [];
+
     for (let y = 0; y < MAP_ROWS; y++) {
       for (let x = 0; x < MAP_COLS; x++) {
         const tile = this.grid[y][x];
         const wx = x * TILE_SIZE + TILE_SIZE / 2;
         const wy = y * TILE_SIZE + TILE_SIZE / 2;
+        
+        // Base floor
+        if (tile !== TILE.WALL && tile !== TILE.VOID) {
+             this.add.image(wx, wy, 'floor').setDepth(0);
+        }
+
         if (tile === TILE.WALL) {
           this.mapTiles.push(this.add.image(wx, wy, 'wall').setDepth(2));
-        } else if ([TILE.FLOOR, TILE.ENTRANCE, TILE.COIN, TILE.ENEMY_PATH, TILE.SWITCH].includes(tile)) {
-          this.add.image(wx, wy, 'floor').setDepth(0);
         } else if (tile === TILE.PORTAL_IN || tile === TILE.PORTAL_OUT) {
-          this.add.image(wx, wy, 'floor').setDepth(0);
           this.add.circle(wx, wy, 12, COLORS.PORTAL_PURPLE).setDepth(1);
           const glow = this.add.circle(wx, wy, 16, COLORS.PORTAL_GLOW).setBlendMode('ADD').setAlpha(0.6).setDepth(2);
           this.tweens.add({
@@ -99,14 +111,19 @@ export class GameScene extends Phaser.Scene {
             duration: 800, yoyo: true, repeat: -1
           });
         } else if (tile === TILE.SPIKE) {
-          this.add.image(wx, wy, 'floor').setDepth(0);
           this.mapTiles.push(this.add.image(wx, wy, 'spike').setDepth(3));
         } else if (tile === TILE.EXIT) {
-          this.add.image(wx, wy, 'floor').setDepth(0);
           this.exitSprite = this.add.image(wx, wy, 'exit_0').setDepth(4);
           this._animateExit();
         } else if (tile === TILE.GATE) {
-          this.add.image(wx, wy, 'gate').setDepth(3);
+          const gate = this.add.image(wx, wy, 'gate').setDepth(3);
+          this.gateSprites.push({ x, y, sprite: gate });
+        } else if (tile === TILE.SWITCH) {
+          this.add.image(wx, wy, 'switch').setDepth(2);
+        } else if (tile === TILE.TELEPORT_A) {
+          this.add.image(wx, wy, 'teleport_a_0').setDepth(2);
+        } else if (tile === TILE.TELEPORT_B) {
+          this.add.image(wx, wy, 'teleport_b_0').setDepth(2);
         }
       }
     }
@@ -140,23 +157,28 @@ export class GameScene extends Phaser.Scene {
     this.darkness.fillRect(0, 0, MAP_COLS * TILE_SIZE, MAP_ROWS * TILE_SIZE);
     this.darkness.setBlendMode('ERASE');
     for (const pos of this.dungeon.torchPositions)
-      this.darkness.fillCircle(pos.x * TILE_SIZE + TILE_SIZE / 2, pos.y * TILE_SIZE + TILE_SIZE / 2, 80);
+      this.darkness.fillCircle(pos.x * TILE_SIZE + TILE_SIZE / 2, pos.y * TILE_SIZE + TILE_SIZE / 2, 100);
     if (this.dungeon.entrance)
-      this.darkness.fillCircle(this.dungeon.entrance.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.entrance.y * TILE_SIZE + TILE_SIZE / 2, 70);
+      this.darkness.fillCircle(this.dungeon.entrance.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.entrance.y * TILE_SIZE + TILE_SIZE / 2, 90);
     if (this.dungeon.exit)
-      this.darkness.fillCircle(this.dungeon.exit.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.exit.y * TILE_SIZE + TILE_SIZE / 2, 70);
+      this.darkness.fillCircle(this.dungeon.exit.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.exit.y * TILE_SIZE + TILE_SIZE / 2, 90);
     if (this.dungeon.hasPortal) {
       this.darkness.fillCircle(this.dungeon.portalIn.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.portalIn.y * TILE_SIZE + TILE_SIZE / 2, 70);
       this.darkness.fillCircle(this.dungeon.portalOut.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.portalOut.y * TILE_SIZE + TILE_SIZE / 2, 70);
     }
     for (const room of this.dungeon.rooms)
       this.darkness.fillCircle((room.x + room.w / 2) * TILE_SIZE, (room.y + room.h / 2) * TILE_SIZE, Math.max(room.w, room.h) * TILE_SIZE * 0.6);
+      
+    // Light around player
+    if (this.player && this.player.alive) {
+       this.darkness.fillCircle(this.player.sprite.x, this.player.sprite.y, 120);
+    }
     this.darkness.setBlendMode('NORMAL');
   }
 
   _showFloorAnnouncement() {
-    const { height } = this.scale;
-    const text = this.add.text(MAP_COLS * TILE_SIZE / 2, height / 2, `⚔ FLOOR ${this.floor} ⚔`, {
+    const { width, height } = this.scale;
+    const text = this.add.text(width / 2, height / 2, `⚔ FLOOR ${this.floor} ⚔`, {
       fontSize: '28px', fontFamily: 'MedievalSharp, serif', color: '#f5c518',
       stroke: '#2c1810', strokeThickness: 3,
       shadow: { offsetX: 2, offsetY: 2, color: '#000', blur: 8, fill: true }
@@ -170,6 +192,8 @@ export class GameScene extends Phaser.Scene {
   update(time, delta) {
     if (this.gameOver) return;
 
+    this._updateDarkness(); // Update darkness around player
+
     this.inputManager.update();
 
     if (!this.player.sliding) {
@@ -181,12 +205,29 @@ export class GameScene extends Phaser.Scene {
           this._handleSlideResult(result);
         });
       }
+      
+      // Auto-collect nearby coins if magnet is active
+      if (this.player.magnetAura.alpha > 0) {
+          const px = this.player.tileX;
+          const py = this.player.tileY;
+          for (const coin of this.collectibles) {
+             if (!coin.collected && Math.abs(coin.tileX - px) + Math.abs(coin.tileY - py) <= MAGNET_RADIUS) {
+                 coin.collect();
+                 this._addScore(COIN_SCORE);
+             }
+          }
+      }
     }
 
     for (const enemy of this.enemies) {
-      enemy.update(delta);
-      if (!this.player.sliding && this.player.alive && enemy.checkCollision(this.player.tileX, this.player.tileY))
-        this._playerDeath();
+      enemy.update(delta, this.player);
+      if (!this.player.sliding && this.player.alive && enemy.checkCollision(this.player.sprite.x, this.player.sprite.y)) {
+        this._handleDamage();
+      }
+    }
+    
+    for (const trap of this.traps) {
+        trap.update(delta, this.grid, this.player);
     }
 
     for (const c of this.collectibles) c.update(delta);
@@ -198,7 +239,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.player.alive) {
       const ts = this.tide.update(delta, this.player.sprite.y);
-      if (ts === 'dead') this._playerDeath();
+      if (ts === 'dead') this._handleDamage();
       else if (ts === 'warning') { soundGen.playTideWarning(); this.cameras.main.shake(200, 0.003); }
       const hud = this.scene.get('HUDScene');
       if (hud && hud.updateTide) hud.updateTide(this.tide.getWorldY(), this.player.sprite.y, MAP_ROWS * TILE_SIZE);
@@ -207,16 +248,36 @@ export class GameScene extends Phaser.Scene {
 
   _handleSlideResult(result) {
     if (!result) return;
-    for (const pos of result.collected) {
+    
+    for (const pos of result.collectedCoins) {
       const coin = this.collectibles.find(c => c.tileX === pos.x && c.tileY === pos.y && !c.collected);
       if (coin) {
-        coin.collect(); this.score += COIN_SCORE; this.totalCoins++;
-        soundGen.playCoinCollect(); this.grid[pos.y][pos.x] = TILE.FLOOR;
-        const hud = this.scene.get('HUDScene');
-        if (hud && hud.updateScore) hud.updateScore(this.score, this.totalCoins);
+        coin.collect(); 
+        this._addScore(COIN_SCORE);
+        this.grid[pos.y][pos.x] = TILE.FLOOR;
       }
     }
-    if (result.hitSpike) { this._playerDeath(); return; }
+    
+    for (const p of result.collectedPowerups) {
+      const pup = this.powerUps.find(c => c.tileX === p.x && c.tileY === p.y && !c.collected);
+      if (pup) {
+         pup.collect();
+         this.grid[p.y][p.x] = TILE.FLOOR;
+         this._activatePowerUp(p.type);
+      }
+    }
+    
+    for (const t of result.triggeredTraps) {
+        if (t.type === 'crumble') {
+            const trap = this.traps.find(tr => tr.tileX === t.x && tr.tileY === t.y);
+            if (trap) trap.triggerCrumble();
+        }
+    }
+
+    if (result.hitSpike) { 
+        this._handleDamage(); 
+        return; 
+    }
     if (result.hitExit) { this._floorComplete(); return; }
     if (result.hitPortal) {
       const pout = this.dungeon.portalOut;
@@ -230,8 +291,110 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.flash(300, 155, 89, 182);
       }
     }
-    for (const enemy of this.enemies)
-      if (enemy.checkCollision(this.player.tileX, this.player.tileY)) { this._playerDeath(); return; }
+    
+    // Check switch
+    if (result.hitSwitch) {
+       this._triggerSwitch(result.hitSwitch);
+    }
+    
+    // Check teleport
+    if (result.hitTeleport) {
+       this._triggerTeleport(result.hitTeleport);
+    }
+
+    // Double check enemies
+    for (const enemy of this.enemies) {
+      if (enemy.checkCollision(this.player.sprite.x, this.player.sprite.y)) { 
+          this._handleDamage(); 
+          return; 
+      }
+    }
+  }
+  _addScore(amount) {
+      this.score += amount;
+      if (amount === COIN_SCORE) {
+          this.totalCoins++;
+          soundGen.playCoinCollect();
+      }
+      const hud = this.scene.get('HUDScene');
+      if (hud && hud.updateScore) hud.updateScore(this.score, this.totalCoins);
+  }
+
+  _handleDamage() {
+      if (this.gameOver) return;
+      if (this.player.hasShield) {
+          this.player.breakShield();
+          // Knockback? Just break shield for now
+          return;
+      }
+      this._playerDeath();
+  }
+  
+  _activatePowerUp(type) {
+      if (type === TILE.POWERUP_SHIELD) {
+          this.player.activateShield();
+      } else if (type === TILE.POWERUP_FREEZE) {
+          this._freezeAll();
+      } else if (type === TILE.POWERUP_MAGNET) {
+          this.player.activateMagnet(POWERUP_DURATION.MAGNET);
+          soundGen.playMagnet();
+      }
+  }
+  
+  _freezeAll() {
+      if (this.isFrozen) return;
+      this.isFrozen = true;
+      soundGen.playFreeze();
+      
+      this.enemies.forEach(e => e.setFrozen(true));
+      this.traps.forEach(t => t.setFrozen(true));
+      
+      this.time.delayedCall(POWERUP_DURATION.FREEZE, () => {
+          this.isFrozen = false;
+          this.enemies.forEach(e => e.setFrozen(false));
+          this.traps.forEach(t => t.setFrozen(false));
+      });
+  }
+
+  _triggerSwitch(pos) {
+      // Find corresponding gate
+      const sw = this.dungeon.switches.find(s => s.sx === pos.x && s.sy === pos.y);
+      if (sw) {
+          soundGen.playSwitch();
+          this.grid[sw.gy][sw.gx] = TILE.FLOOR; // Open gate
+          
+          // Animate gate opening (destroy sprite)
+          const gateData = this.gateSprites.find(g => g.x === sw.gx && g.y === sw.gy);
+          if (gateData && gateData.sprite) {
+              this.tweens.add({
+                  targets: gateData.sprite, y: gateData.sprite.y - TILE_SIZE, alpha: 0,
+                  duration: 500, ease: 'Power2',
+                  onComplete: () => gateData.sprite.destroy()
+              });
+          }
+      }
+  }
+
+  _triggerTeleport(pos) {
+      const tp = this.dungeon.teleporters.find(t => 
+          (t.x1 === pos.x && t.y1 === pos.y) || (t.x2 === pos.x && t.y2 === pos.y)
+      );
+      if (tp) {
+          const destX = pos.x === tp.x1 ? tp.x2 : tp.x1;
+          const destY = pos.y === tp.y1 ? tp.y2 : tp.y1;
+          
+          soundGen.playTeleport();
+          
+          // Flash screen
+          this.cameras.main.flash(200, 155, 89, 182);
+          
+          this.player.tileX = destX;
+          this.player.tileY = destY;
+          this.player.sprite.x = destX * TILE_SIZE + TILE_SIZE / 2;
+          this.player.sprite.y = destY * TILE_SIZE + TILE_SIZE / 2;
+          this.player.glow.x = this.player.sprite.x;
+          this.player.glow.y = this.player.sprite.y;
+      }
   }
 
   _playerDeath() {
@@ -265,6 +428,8 @@ export class GameScene extends Phaser.Scene {
     if (this.player) this.player.destroy();
     for (const e of this.enemies) e.destroy();
     for (const c of this.collectibles) c.destroy();
+    for (const t of this.traps) t.destroy();
+    for (const p of this.powerUps) p.destroy();
     if (this.tide) this.tide.destroy();
   }
 
