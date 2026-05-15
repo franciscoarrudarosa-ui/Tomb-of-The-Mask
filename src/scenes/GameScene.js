@@ -90,6 +90,14 @@ export class GameScene extends Phaser.Scene {
           this.mapTiles.push(this.add.image(wx, wy, 'wall').setDepth(2));
         } else if ([TILE.FLOOR, TILE.ENTRANCE, TILE.COIN, TILE.ENEMY_PATH, TILE.SWITCH].includes(tile)) {
           this.add.image(wx, wy, 'floor').setDepth(0);
+        } else if (tile === TILE.PORTAL_IN || tile === TILE.PORTAL_OUT) {
+          this.add.image(wx, wy, 'floor').setDepth(0);
+          this.add.circle(wx, wy, 12, COLORS.PORTAL_PURPLE).setDepth(1);
+          const glow = this.add.circle(wx, wy, 16, COLORS.PORTAL_GLOW).setBlendMode('ADD').setAlpha(0.6).setDepth(2);
+          this.tweens.add({
+            targets: glow, alpha: 0.2, scaleX: 1.2, scaleY: 1.2,
+            duration: 800, yoyo: true, repeat: -1
+          });
         } else if (tile === TILE.SPIKE) {
           this.add.image(wx, wy, 'floor').setDepth(0);
           this.mapTiles.push(this.add.image(wx, wy, 'spike').setDepth(3));
@@ -137,6 +145,10 @@ export class GameScene extends Phaser.Scene {
       this.darkness.fillCircle(this.dungeon.entrance.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.entrance.y * TILE_SIZE + TILE_SIZE / 2, 70);
     if (this.dungeon.exit)
       this.darkness.fillCircle(this.dungeon.exit.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.exit.y * TILE_SIZE + TILE_SIZE / 2, 70);
+    if (this.dungeon.hasPortal) {
+      this.darkness.fillCircle(this.dungeon.portalIn.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.portalIn.y * TILE_SIZE + TILE_SIZE / 2, 70);
+      this.darkness.fillCircle(this.dungeon.portalOut.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.portalOut.y * TILE_SIZE + TILE_SIZE / 2, 70);
+    }
     for (const room of this.dungeon.rooms)
       this.darkness.fillCircle((room.x + room.w / 2) * TILE_SIZE, (room.y + room.h / 2) * TILE_SIZE, Math.max(room.w, room.h) * TILE_SIZE * 0.6);
     this.darkness.setBlendMode('NORMAL');
@@ -206,6 +218,18 @@ export class GameScene extends Phaser.Scene {
     }
     if (result.hitSpike) { this._playerDeath(); return; }
     if (result.hitExit) { this._floorComplete(); return; }
+    if (result.hitPortal) {
+      const pout = this.dungeon.portalOut;
+      if (pout) {
+        this.player.tileX = pout.x;
+        this.player.tileY = pout.y;
+        const wx = pout.x * TILE_SIZE + TILE_SIZE / 2;
+        const wy = pout.y * TILE_SIZE + TILE_SIZE / 2;
+        this.player.sprite.setPosition(wx, wy);
+        this.player.glow.setPosition(wx, wy);
+        this.cameras.main.flash(300, 155, 89, 182);
+      }
+    }
     for (const enemy of this.enemies)
       if (enemy.checkCollision(this.player.tileX, this.player.tileY)) { this._playerDeath(); return; }
   }
