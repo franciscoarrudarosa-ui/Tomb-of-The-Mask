@@ -35,7 +35,7 @@ export class Player {
 
     let destX = this.tileX, destY = this.tileY, tilesTraversed = 0;
     const collected = [];
-    let hitSpike = false, hitExit = false, hitSwitch = false;
+    let hitSpike = false, hitExit = false, hitSwitch = false, hitPortal = false;
 
     while (true) {
       const nx = destX + d.dx, ny = destY + d.dy;
@@ -47,6 +47,7 @@ export class Player {
       if (nt === TILE.COIN) collected.push({ x: nx, y: ny });
       if (nt === TILE.EXIT) { hitExit = true; break; }
       if (nt === TILE.SWITCH) hitSwitch = true;
+      if (nt === TILE.PORTAL_IN) { hitPortal = true; break; }
     }
 
     if (destX === this.tileX && destY === this.tileY) return false;
@@ -69,7 +70,7 @@ export class Player {
         this.tileX = destX; this.tileY = destY; this.sliding = false;
         soundGen.playWallHit();
         this.scene.cameras.main.shake(60, 0.005);
-        if (onComplete) onComplete({ collected, hitSpike, hitExit, hitSwitch, destX, destY });
+        if (onComplete) onComplete({ collected, hitSpike, hitExit, hitSwitch, hitPortal, destX, destY });
       }
     });
     return true;
