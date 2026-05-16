@@ -121,9 +121,54 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Darkness overlay
-    this.darkness = this.add.graphics().setDepth(14).setAlpha(0.3);
+    // Darkness overlay using RenderTexture for proper ERASE support
+    this._createDarkness();
+  }
+
+  _createDarkness() {
+    const mapW = MAP_COLS * TILE_SIZE;
+    const mapH = MAP_ROWS * TILE_SIZE;
+
+    // Use a RenderTexture so ERASE blend mode works correctly in WebGL
+    this.darknessRT = this.add.renderTexture(0, 0, mapW, mapH).setDepth(14).setAlpha(0.3);
+    // A temporary graphics used only for drawing into the RenderTexture
+    this._darkGfx = this.make.graphics({ x: 0, y: 0, add: false });
+    this._lightGfx = this.make.graphics({ x: 0, y: 0, add: false });
     this._updateDarkness();
+  }
+
+  _updateDarkness() {
+    const mapW = MAP_COLS * TILE_SIZE;
+    const mapH = MAP_ROWS * TILE_SIZE;
+
+    // Draw the full-screen black cover
+    this._darkGfx.clear();
+    this._darkGfx.fillStyle(0x000000, 1);
+    this._darkGfx.fillRect(0, 0, mapW, mapH);
+
+    // Draw light circles that will be erased
+    this._lightGfx.clear();
+    this._lightGfx.fillStyle(0xffffff, 1);
+
+    for (const pos of this.dungeon.torchPositions) {
+      this._lightGfx.fillCircle(pos.x * TILE_SIZE + TILE_SIZE / 2, pos.y * TILE_SIZE + TILE_SIZE / 2, 100);
+    }
+    if (this.dungeon.entrance) {
+      this._lightGfx.fillCircle(this.dungeon.entrance.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.entrance.y * TILE_SIZE + TILE_SIZE / 2, 90);
+    }
+    if (this.dungeon.exit) {
+      this._lightGfx.fillCircle(this.dungeon.exit.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.exit.y * TILE_SIZE + TILE_SIZE / 2, 90);
+    }
+
+    // Light around player
+    if (this.player && this.player.alive) {
+      this._lightGfx.fillCircle(this.player.sprite.x, this.player.sprite.y, 120);
+    }
+
+    // Compose: fill black, then erase light areas
+    this.darknessRT.clear();
+    this.darknessRT.draw(this._darkGfx);
+    this.darknessRT.erase(this._lightGfx);
   }
 
   _animateExit() {
@@ -142,26 +187,6 @@ export class GameScene extends Phaser.Scene {
       targets: glow, alpha: 0.6, scaleX: 1.3, scaleY: 1.3,
       duration: 1000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
     });
-  }
-
-  _updateDarkness() {
-    this.darkness.clear();
-    this.darkness.fillStyle(0x000000, 1);
-    this.darkness.fillRect(0, 0, MAP_COLS * TILE_SIZE, MAP_ROWS * TILE_SIZE);
-    this.darkness.setBlendMode('ERASE');
-    for (const pos of this.dungeon.torchPositions)
-      this.darkness.fillCircle(pos.x * TILE_SIZE + TILE_SIZE / 2, pos.y * TILE_SIZE + TILE_SIZE / 2, 100);
-    if (this.dungeon.entrance)
-      this.darkness.fillCircle(this.dungeon.entrance.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.entrance.y * TILE_SIZE + TILE_SIZE / 2, 90);
-    if (this.dungeon.exit)
-      this.darkness.fillCircle(this.dungeon.exit.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.exit.y * TILE_SIZE + TILE_SIZE / 2, 90);
-    
-    // Light around player
-    if (this.player && this.player.alive) {
-       this.darkness.fillCircle(this.player.sprite.x, this.player.sprite.y, 120);
-    }
-    
-    this.darkness.setBlendMode('NORMAL');
   }
 
   _showFloorAnnouncement() {
@@ -408,6 +433,9 @@ export class GameScene extends Phaser.Scene {
     for (const t of this.traps) t.destroy();
     for (const p of this.powerUps) p.destroy();
     if (this.tide) this.tide.destroy();
+    if (this._darkGfx) this._darkGfx.destroy();
+    if (this._lightGfx) this._lightGfx.destroy();
+    if (this.darknessRT) this.darknessRT.destroy();
   }
 
   shutdown() { this._cleanup(); }
