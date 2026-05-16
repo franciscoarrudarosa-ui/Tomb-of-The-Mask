@@ -241,6 +241,7 @@ export class DungeonGenerator {
   }
 
   _isCorridorBlocked(x, y) {
+      if (y <= 0 || y >= MAP_ROWS - 1 || x <= 0 || x >= MAP_COLS - 1) return false;
       const up = this.grid[y-1][x]; const down = this.grid[y+1][x];
       const left = this.grid[y][x-1]; const right = this.grid[y][x+1];
       if ((up === TILE.WALL && down === TILE.WALL) || (left === TILE.WALL && right === TILE.WALL)) {
