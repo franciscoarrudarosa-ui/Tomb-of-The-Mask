@@ -196,34 +196,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-<<<<<<< HEAD
-=======
-  _updateDarkness() {
-    this.darkness.clear();
-    this.darkness.fillStyle(0x000000, 1);
-    this.darkness.fillRect(0, 0, MAP_COLS * TILE_SIZE, MAP_ROWS * TILE_SIZE);
-    this.darkness.setBlendMode('ERASE');
-    for (const pos of this.dungeon.torchPositions)
-      this.darkness.fillCircle(pos.x * TILE_SIZE + TILE_SIZE / 2, pos.y * TILE_SIZE + TILE_SIZE / 2, 100);
-    if (this.dungeon.entrance)
-      this.darkness.fillCircle(this.dungeon.entrance.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.entrance.y * TILE_SIZE + TILE_SIZE / 2, 90);
-    if (this.dungeon.exit)
-      this.darkness.fillCircle(this.dungeon.exit.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.exit.y * TILE_SIZE + TILE_SIZE / 2, 90);
-    if (this.dungeon.hasPortal) {
-      this.darkness.fillCircle(this.dungeon.portalIn.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.portalIn.y * TILE_SIZE + TILE_SIZE / 2, 70);
-      this.darkness.fillCircle(this.dungeon.portalOut.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.portalOut.y * TILE_SIZE + TILE_SIZE / 2, 70);
-    }
-    for (const room of this.dungeon.rooms)
-      this.darkness.fillCircle((room.x + room.w / 2) * TILE_SIZE, (room.y + room.h / 2) * TILE_SIZE, Math.max(room.w, room.h) * TILE_SIZE * 0.6);
-      
-    // Light around player
-    if (this.player && this.player.alive) {
-       this.darkness.fillCircle(this.player.sprite.x, this.player.sprite.y, 120);
-    }
-    this.darkness.setBlendMode('NORMAL');
-  }
 
->>>>>>> 981b4c9a925ed36c998bbe29cfb5eb5e0a9647c5
   _showFloorAnnouncement() {
     const { width, height } = this.scale;
     const text = this.add.text(width / 2, height / 2, `⚔ FLOOR ${this.floor} ⚔`, {
