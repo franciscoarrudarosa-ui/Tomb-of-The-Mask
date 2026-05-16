@@ -76,8 +76,8 @@ export class Trap {
             const px = player.sprite.x;
             const py = player.sprite.y;
             if (Phaser.Math.Distance.Between(dart.x, dart.y, px, py) < 16) {
-                if (this.scene._playerDeath) {
-                    this.scene._playerDeath();
+                if (this.scene._handleDamage) {
+                    this.scene._handleDamage();
                     dart.destroy();
                     this.darts.splice(i, 1);
                 }
