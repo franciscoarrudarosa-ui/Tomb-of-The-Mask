@@ -21,13 +21,16 @@ export class DungeonGenerator {
     this.powerUpPositions = [];
     this.teleporters = [];
     this.switches = [];
+    this.hasPortal = false;
+    this.portalIn = null;
+    this.portalOut = null;
   }
 
   generate() {
     for (let attempt = 0; attempt < 150; attempt++) {
       this._reset();
+      this.hasPortal = Math.random() < 0.40;
       this._initGrid();
-      
       // Create maze
       this._generateMaze();
       
@@ -36,6 +39,15 @@ export class DungeonGenerator {
       
       // Entrance at bottom, exit at top
       this._placeEntranceAndExit();
+      
+      if (this.hasPortal && this.rooms.length > 2) {
+          this._placePortals();
+      } else {
+          this.hasPortal = false;
+      }
+      
+      // Place the exit far away
+      this._placeExit();
       
       // Ensure reachability
       if (!this._isReachable(this.entrance, this.exit)) continue;
@@ -78,6 +90,9 @@ export class DungeonGenerator {
     this.switches = [];
     this.entrance = null;
     this.exit = null;
+    this.portalIn = null;
+    this.portalOut = null;
+    this.hasPortal = false;
   }
 
   _initGrid() {
@@ -170,6 +185,25 @@ export class DungeonGenerator {
         }
         this.rooms.push({ x, y, w, h, cx: Math.floor(x + w / 2), cy: Math.floor(y + h / 2) });
     }
+    
+    // Disconnect the last room if hasPortal
+    if (this.hasPortal && this.rooms.length > 2) {
+       const room = this.rooms[this.rooms.length - 1];
+       // Surround room with walls
+       for(let r = room.y - 1; r <= room.y + room.h; r++) {
+         if (r >= 0 && r < MAP_ROWS) {
+            if (room.x - 1 >= 0) this.grid[r][room.x - 1] = TILE.WALL;
+            if (room.x + room.w < MAP_COLS) this.grid[r][room.x + room.w] = TILE.WALL;
+         }
+       }
+       for(let c = room.x - 1; c <= room.x + room.w; c++) {
+         if (c >= 0 && c < MAP_COLS) {
+            if (room.y - 1 >= 0) this.grid[room.y - 1][c] = TILE.WALL;
+            if (room.y + room.h < MAP_ROWS) this.grid[room.y + room.h][c] = TILE.WALL;
+         }
+       }
+    }
+    }
   }
 
   _placeEntranceAndExit() {
@@ -200,6 +234,83 @@ export class DungeonGenerator {
         if(this.grid[this.exit.y+1][this.exit.x+dx] === TILE.WALL)
             this.grid[this.exit.y+1][this.exit.x+dx] = TILE.FLOOR;
     }
+  }
+
+  _placePortals() {
+    const connectedRoom = this.rooms[this.rooms.length - 2];
+    const isolatedRoom = this.rooms[this.rooms.length - 1];
+
+    this.portalIn = { x: connectedRoom.cx, y: connectedRoom.cy };
+    this.grid[this.portalIn.y][this.portalIn.x] = TILE.PORTAL_IN;
+
+    this.portalOut = { x: isolatedRoom.cx, y: isolatedRoom.cy };
+    this.grid[this.portalOut.y][this.portalOut.x] = TILE.PORTAL_OUT;
+  }
+
+  _placeExit() {
+    // Remove the previously placed exit by _placeEntranceAndExit
+    if (this.exit) {
+      this.grid[this.exit.y][this.exit.x] = TILE.FLOOR;
+    }
+    
+    const startNode = this.hasPortal ? this.portalOut : this.entrance;
+    let targetRoom = this.rooms.length > 0 ? this.rooms[this.rooms.length - 1] : null;
+    
+    // Find furthest floor tile in the target room (or overall reachable structurally)
+    // To ensure it's random but at the end, we BFS from startNode
+    const visited = new Map();
+    const queue = [{ x: startNode.x, y: startNode.y, dist: 0 }];
+    visited.set(`${startNode.x},${startNode.y}`, 0);
+    
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    let maxDist = 0;
+    const tilesByDist = [];
+
+    while (queue.length) {
+      const { x, y, dist } = queue.shift();
+      if (dist > maxDist) maxDist = dist;
+      if (!tilesByDist[dist]) tilesByDist[dist] = [];
+      tilesByDist[dist].push({ x, y });
+
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) continue;
+        const t = this.grid[ny][nx];
+        // Only walk on FLOOR or ENTRANCE or PORTAL_OUT
+        if (t === TILE.WALL || t === TILE.GATE || t === TILE.PORTAL_IN) continue;
+        
+        const k = `${nx},${ny}`;
+        if (!visited.has(k)) {
+          visited.set(k, dist + 1);
+          queue.push({ x: nx, y: ny, dist: dist + 1 });
+        }
+      }
+    }
+
+    // Pick a random tile from the top 10% furthest distances
+    const farDist = Math.max(0, Math.floor(maxDist * 0.9));
+    let candidates = [];
+    for (let d = farDist; d <= maxDist; d++) {
+      if (tilesByDist[d]) candidates.push(...tilesByDist[d]);
+    }
+    
+    // Filter to target room if hasPortal to ensure it stays in isolated room
+    if (this.hasPortal && targetRoom) {
+      const roomCand = candidates.filter(c => 
+        c.x >= targetRoom.x && c.x < targetRoom.x + targetRoom.w &&
+        c.y >= targetRoom.y && c.y < targetRoom.y + targetRoom.h
+      );
+      if (roomCand.length > 0) candidates = roomCand;
+    }
+    
+    // Fallback if no candidates
+    if (candidates.length === 0) {
+      candidates = [{ x: Math.floor(MAP_COLS/2), y: 1 }];
+    }
+
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    this.exit = { x: chosen.x, y: chosen.y };
+    this.grid[this.exit.y][this.exit.x] = TILE.EXIT;
   }
 
   _getFloorTiles() {
@@ -414,6 +525,16 @@ export class DungeonGenerator {
     while (queue.length) {
       const [cx, cy] = queue.shift();
       if (cx === to.x && cy === to.y) return true;
+      
+      // If we are at PORTAL_IN, jump to PORTAL_OUT
+      if (this.grid[cy][cx] === TILE.PORTAL_IN && this.portalOut) {
+        const {x: px, y: py} = this.portalOut;
+        if (!visited[py][px]) {
+          visited[py][px] = 1;
+          queue.push([px, py]);
+        }
+      }
+
       for (const [dx, dy] of dirs) {
         const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) continue;
@@ -436,8 +557,19 @@ export class DungeonGenerator {
 
     while (queue.length) {
       const { x, y } = queue.shift();
+      
+      // Stop and jump through portal if standing on PORTAL_IN
+      if (this.grid[y][x] === TILE.PORTAL_IN && this.portalOut) {
+        const k = key(this.portalOut.x, this.portalOut.y);
+        if (!visited.has(k)) {
+          visited.add(k);
+          queue.push({ x: this.portalOut.x, y: this.portalOut.y });
+        }
+        continue; // Since we stop at portal, we don't slide from PORTAL_IN
+      }
+
       for (const { dx, dy } of dirs) {
-        let hitSpike = false, reachedExit = false, hitStopTile = false;
+        let hitSpike = false, reachedExit = false, hitStopTile = false, hitPortal = false;
         let destX = x, destY = y;
         
         while (true) {
@@ -451,6 +583,7 @@ export class DungeonGenerator {
           if (t === TILE.SPIKE || t === TILE.TIMED_SPIKE) { hitSpike = true; break; }
           if (t === TILE.EXIT) { reachedExit = true; break; }
           if (t === TILE.SWITCH || t === TILE.TELEPORT_A || t === TILE.TELEPORT_B) { hitStopTile = true; break; }
+          if (t === TILE.PORTAL_IN) { hitPortal = true; break; }
         }
         
         if (destX === x && destY === y) continue;
@@ -470,16 +603,16 @@ export class DungeonGenerator {
         }
         
         if (hitSpike) continue;
-        
         const k = key(destX, destY);
         if (!visited.has(k)) { 
             visited.add(k); 
-            queue.push({ x: destX, y: destY }); 
+            queue.push({ x: destX, y: destY });
         }
       }
     }
     return false;
   }
+
 
   _generateFallback() {
       this._reset();
