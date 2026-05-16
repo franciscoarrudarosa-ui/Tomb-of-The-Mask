@@ -2,7 +2,7 @@
 // Enemy — Patrolling obstacle
 // ============================================
 
-import { TILE_SIZE, ENEMY_TYPES } from '../constants.js';
+import { TILE_SIZE, TILE, ENEMY_TYPES } from '../constants.js';
 
 export class Enemy {
   constructor(scene, pathData) {
@@ -127,13 +127,13 @@ export class Enemy {
             const y2 = Math.max(py, ey);
             for (let y = y1; y <= y2; y++) {
                // We need grid access here, assume scene has it
-               if (this.scene.grid && this.scene.grid[y][px] === 1) blocked = true;
+               if (this.scene.grid && this.scene.grid[y][px] === TILE.WALL) blocked = true;
             }
           } else {
              const x1 = Math.min(px, ex);
              const x2 = Math.max(px, ex);
              for (let x = x1; x <= x2; x++) {
-               if (this.scene.grid && this.scene.grid[ey][x] === 1) blocked = true;
+               if (this.scene.grid && this.scene.grid[ey][x] === TILE.WALL) blocked = true;
              }
           }
           
