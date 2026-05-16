@@ -128,54 +128,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Darkness overlay using RenderTexture for proper ERASE support
-    this._createDarkness();
-  }
-
-  _createDarkness() {
-    const mapW = MAP_COLS * TILE_SIZE;
-    const mapH = MAP_ROWS * TILE_SIZE;
-
-    // Use a RenderTexture so ERASE blend mode works correctly in WebGL
-    this.darknessRT = this.add.renderTexture(0, 0, mapW, mapH).setDepth(14).setAlpha(0.3);
-    // A temporary graphics used only for drawing into the RenderTexture
-    this._darkGfx = this.make.graphics({ x: 0, y: 0, add: false });
-    this._lightGfx = this.make.graphics({ x: 0, y: 0, add: false });
-    this._updateDarkness();
-  }
-
-  _updateDarkness() {
-    const mapW = MAP_COLS * TILE_SIZE;
-    const mapH = MAP_ROWS * TILE_SIZE;
-
-    // Draw the full-screen black cover
-    this._darkGfx.clear();
-    this._darkGfx.fillStyle(0x000000, 1);
-    this._darkGfx.fillRect(0, 0, mapW, mapH);
-
-    // Draw light circles that will be erased
-    this._lightGfx.clear();
-    this._lightGfx.fillStyle(0xffffff, 1);
-
-    for (const pos of this.dungeon.torchPositions) {
-      this._lightGfx.fillCircle(pos.x * TILE_SIZE + TILE_SIZE / 2, pos.y * TILE_SIZE + TILE_SIZE / 2, 100);
-    }
-    if (this.dungeon.entrance) {
-      this._lightGfx.fillCircle(this.dungeon.entrance.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.entrance.y * TILE_SIZE + TILE_SIZE / 2, 90);
-    }
-    if (this.dungeon.exit) {
-      this._lightGfx.fillCircle(this.dungeon.exit.x * TILE_SIZE + TILE_SIZE / 2, this.dungeon.exit.y * TILE_SIZE + TILE_SIZE / 2, 90);
-    }
-
-    // Light around player
-    if (this.player && this.player.alive) {
-      this._lightGfx.fillCircle(this.player.sprite.x, this.player.sprite.y, 120);
-    }
-
-    // Compose: fill black, then erase light areas
-    this.darknessRT.clear();
-    this.darknessRT.draw(this._darkGfx);
-    this.darknessRT.erase(this._lightGfx);
+    // Darkness overlay removed
   }
 
   _animateExit() {
@@ -213,7 +166,7 @@ export class GameScene extends Phaser.Scene {
   update(time, delta) {
     if (this.gameOver) return;
 
-    this._updateDarkness(); // Update darkness around player
+
 
     this.inputManager.update();
 
