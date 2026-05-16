@@ -203,7 +203,6 @@ export class DungeonGenerator {
          }
        }
     }
-    }
   }
 
   _placeEntranceAndExit() {
