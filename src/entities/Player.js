@@ -42,7 +42,7 @@ export class Player {
     const collectedPowerups = [];
     const triggeredTraps = []; // e.g. crumble
     let hitSpike = false, hitExit = false;
-    let hitSwitch = null, hitTeleport = null;
+    let hitSwitch = null, hitTeleport = null, hitPortal = false;
 
     while (true) {
       const nx = destX + d.dx, ny = destY + d.dy;
@@ -57,7 +57,6 @@ export class Player {
       // Death / Exit
       if (nt === TILE.SPIKE || nt === TILE.TIMED_SPIKE) { hitSpike = true; break; }
       if (nt === TILE.EXIT) { hitExit = true; break; }
-      
       // Collectibles
       if (nt === TILE.COIN) collectedCoins.push({ x: nx, y: ny });
       if (nt === TILE.POWERUP_SHIELD || nt === TILE.POWERUP_FREEZE || nt === TILE.POWERUP_MAGNET) {
@@ -67,6 +66,7 @@ export class Player {
       // Interactions
       if (nt === TILE.SWITCH) { hitSwitch = { x: nx, y: ny }; break; } // stop on switch
       if (nt === TILE.TELEPORT_A || nt === TILE.TELEPORT_B) { hitTeleport = { x: nx, y: ny, type: nt }; break; } // stop on teleporter
+      if (nt === TILE.PORTAL_IN) { hitPortal = true; break; } // stop on portal_in
       if (nt === TILE.CRUMBLE) triggeredTraps.push({ x: nx, y: ny, type: 'crumble' });
     }
 
@@ -98,7 +98,7 @@ export class Player {
         this.scene.cameras.main.shake(60, 0.005);
         if (onComplete) onComplete({ 
             collectedCoins, collectedPowerups, triggeredTraps,
-            hitSpike, hitExit, hitSwitch, hitTeleport, 
+            hitSpike, hitExit, hitSwitch, hitTeleport, hitPortal,
             destX, destY 
         });
       }
